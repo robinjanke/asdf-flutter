@@ -5,41 +5,38 @@ currentDir="$(dirname $0)"
 source "${currentDir}/jq-downloader"
 source "${currentDir}/utils.sh"
 
-install() {
+is_linux_arm64() {
+  [ "$(uname -s)" = "Linux" ] && { [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; }
+}
 
-  if [ "${ASDF_INSTALL_TYPE}" == "ref" ]; then
-    echo "Only binary versions are supported"
-    exit 1
-  fi
-  
-  local urlPrefix="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases"
-  
-  local versionListUrl="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases/releases_macos.json"
-  
-  if [ "$(uname -s)" == "Linux" ]; then
-    versionListUrl="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases/releases_linux.json"
-  fi
-  
-  local escapedInstallVersion=$(echo $ASDF_INSTALL_VERSION | sed 's/\./\\\./g;s/\+/\\\+/g')
-  local jsonResponse=$(curl -sL "${versionListUrl}" | "${JQ_BIN}" --arg VERSION "${escapedInstallVersion}" '.releases[] | select((.version + "-" + .channel) | test("^v?" + $VERSION))')
-  local jsonResponseLength=$(echo "${jsonResponse}" | "${JQ_BIN}" -s 'length')
-  local filePath=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.archive')
-  if [ "$(uname -s)" == "Darwin" ] && [ ${jsonResponseLength} -gt 1 ]; then
-    local arch="x64"
-    if [ "$(uname -m)" == "arm64" ]; then
-      arch="arm64"
-    fi
+install_from_git() {
+  local revision channel
 
-    channel=$(echo "$ASDF_INSTALL_VERSION" | grep -oE '(stable|beta|dev)$' || echo "stable")
-    filePath=$(echo "${jsonResponse}" | "${JQ_BIN}" -r --arg ARCH "${arch}" --arg CHANNEL "${channel}" \
-      '. | select(.dart_sdk_arch == $ARCH and .channel == $CHANNEL) | .archive' | head -n 1 )
-  fi
+  revision=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.hash' | head -n 1)
+  channel=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.channel' | head -n 1)
 
-  if [ -z "${filePath}" ]; then
-    echo "Cannot find the download url for the version: ${ASDF_INSTALL_VERSION}"
+  if [ -z "${revision}" ] || [ "${revision}" = "null" ]; then
+    echo "Cannot find git revision for the version: ${ASDF_INSTALL_VERSION}"
     exit 1
   fi
 
+  echo "No Linux ARM64 SDK archive is available for ${ASDF_INSTALL_VERSION}."
+  echo "Installing Flutter ${revision} from git (channel: ${channel}) instead."
+
+  mkdir -p "${ASDF_INSTALL_PATH}"
+
+  git init "${ASDF_INSTALL_PATH}"
+  (
+    cd "${ASDF_INSTALL_PATH}" || exit 1
+    git remote add origin https://github.com/flutter/flutter.git
+    git fetch --depth 1 origin "${revision}"
+    git checkout FETCH_HEAD
+    ./bin/flutter --version
+    ./bin/flutter precache
+  )
+}
+
+install_binary() {
   local url="${urlPrefix}/${filePath}"
   local fileName="${url##*/}"
 
@@ -54,6 +51,57 @@ install() {
     tar xf "${fileName}" --strip 1
   fi
   rm -f "${fileName}"
+}
+
+install() {
+
+  if [ "${ASDF_INSTALL_TYPE}" == "ref" ]; then
+    echo "Only binary versions are supported"
+    exit 1
+  fi
+
+  local urlPrefix="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases"
+  local versionListUrl="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases/releases_macos.json"
+
+  if [ "$(uname -s)" == "Linux" ]; then
+    versionListUrl="${FLUTTER_STORAGE_BASE_URL}/flutter_infra_release/releases/releases_linux.json"
+  fi
+
+  local escapedInstallVersion=$(echo $ASDF_INSTALL_VERSION | sed 's/\./\\\./g;s/\+/\\\+/g')
+  local jsonResponse=$(curl -sL "${versionListUrl}" | "${JQ_BIN}" --arg VERSION "${escapedInstallVersion}" '.releases[] | select((.version + "-" + .channel) | test("^v?" + $VERSION))')
+  local jsonResponseLength=$(echo "${jsonResponse}" | "${JQ_BIN}" -s 'length')
+  local filePath=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.archive')
+
+  if [ "$(uname -s)" == "Darwin" ] && [ ${jsonResponseLength} -gt 1 ]; then
+    local arch="x64"
+    if [ "$(uname -m)" == "arm64" ]; then
+      arch="arm64"
+    fi
+
+    channel=$(echo "$ASDF_INSTALL_VERSION" | grep -oE '(stable|beta|dev)$' || echo "stable")
+    filePath=$(echo "${jsonResponse}" | "${JQ_BIN}" -r --arg ARCH "${arch}" --arg CHANNEL "${channel}" \
+      '. | select(.dart_sdk_arch == $ARCH and .channel == $CHANNEL) | .archive' | head -n 1 )
+  fi
+
+  if is_linux_arm64; then
+    if [ ${jsonResponseLength} -gt 1 ]; then
+      channel=$(echo "$ASDF_INSTALL_VERSION" | grep -oE '(stable|beta|dev)$' || echo "stable")
+      filePath=$(echo "${jsonResponse}" | "${JQ_BIN}" -r --arg ARCH "arm64" --arg CHANNEL "${channel}" \
+        '. | select(.dart_sdk_arch == $ARCH and .channel == $CHANNEL) | .archive' | head -n 1 )
+    fi
+
+    if [ -z "${filePath}" ] || [ "${filePath}" = "null" ]; then
+      install_from_git
+      return
+    fi
+  fi
+
+  if [ -z "${filePath}" ] || [ "${filePath}" = "null" ]; then
+    echo "Cannot find the download url for the version: ${ASDF_INSTALL_VERSION}"
+    exit 1
+  fi
+
+  install_binary
 }
 
 download_jq_if_not_exists

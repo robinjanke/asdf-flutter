@@ -2,15 +2,16 @@
 
 get_jq_filename() {
   case "$(uname -s)" in
-  Linux)
-    case "$(uname -m)" in
-    x86_64) echo jq-linux-amd64 ;;
-    esac ;;
-  Darwin)
-    case "$(uname -m)" in
-    x86_64) echo jq-macos-amd64 ;;
-    arm64) echo jq-macos-arm64 ;;
-    esac ;;
+    Linux)
+      case "$(uname -m)" in
+        x86_64) echo jq-linux-amd64 ;;
+        aarch64|arm64) echo jq-linux-arm64 ;;
+      esac ;;
+    Darwin)
+      case "$(uname -m)" in
+        x86_64) echo jq-macos-amd64 ;;
+        arm64) echo jq-macos-arm64 ;;
+      esac ;;
   esac
 }
 
@@ -19,7 +20,14 @@ download_jq_if_not_exists() {
   jq_path="$(type -p jq || echo ${currentDir}/jq)"
 
   if [[ -z "$(type -p ${jq_path})" ]]; then
-    curl -sL "https://github.com/jqlang/jq/releases/latest/download/$(get_jq_filename)" -o "${jq_path}"
+    local jq_filename
+    jq_filename="$(get_jq_filename)"
+    if [ -z "${jq_filename}" ]; then
+      echo "jq is required but no prebuilt binary is available for $(uname -s)/$(uname -m)."
+      echo "Install jq with your package manager and retry."
+      exit 1
+    fi
+    curl -sL "https://github.com/jqlang/jq/releases/latest/download/${jq_filename}" -o "${jq_path}"
     chmod +x "${jq_path}"
   fi
 

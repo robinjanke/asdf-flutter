@@ -47,3 +47,28 @@ softwareupdate --install-rosetta
 ```
 
 
+
+## Linux on ARM64 (aarch64)
+
+Flutter does not publish prebuilt Linux ARM64 SDK archives. On Ubuntu and other Linux ARM64 systems, this fork installs Flutter from the official git repository instead of downloading an x64 archive.
+
+Install this fork with:
+
+```bash
+asdf plugin add flutter https://github.com/robinjanke/asdf-flutter.git
+```
+
+If you already use the default plugin, remove it first:
+
+```bash
+asdf plugin remove flutter
+asdf plugin add flutter https://github.com/robinjanke/asdf-flutter.git
+```
+
+On Ubuntu ARM64, install build dependencies before running `asdf install flutter`:
+
+```bash
+sudo apt install git curl unzip clang cmake ninja-build pkg-config libgtk-3-dev
+```
+
+The first install takes longer than a binary download because Flutter downloads the ARM64 Dart SDK and engine artifacts during `precache`.

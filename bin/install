@@ -10,10 +10,11 @@ is_linux_arm64() {
 }
 
 install_from_git() {
-  local revision channel
+  local revision channel version_tag
 
   revision=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.hash' | head -n 1)
   channel=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.channel' | head -n 1)
+  version_tag=$(echo "${jsonResponse}" | "${JQ_BIN}" -r '.version' | head -n 1)
 
   if [ -z "${revision}" ] || [ "${revision}" = "null" ]; then
     echo "Cannot find git revision for the version: ${ASDF_INSTALL_VERSION}"
@@ -21,16 +22,14 @@ install_from_git() {
   fi
 
   echo "No Linux ARM64 SDK archive is available for ${ASDF_INSTALL_VERSION}."
-  echo "Installing Flutter ${revision} from git (channel: ${channel}) instead."
+  echo "Installing Flutter ${version_tag} (${revision}) from git (channel: ${channel}) instead."
 
-  mkdir -p "${ASDF_INSTALL_PATH}"
+  rm -rf "${ASDF_INSTALL_PATH}"
 
-  git init "${ASDF_INSTALL_PATH}"
+  git clone -b "${channel}" https://github.com/flutter/flutter.git "${ASDF_INSTALL_PATH}"
   (
     cd "${ASDF_INSTALL_PATH}" || exit 1
-    git remote add origin https://github.com/flutter/flutter.git
-    git fetch --depth 1 origin "${revision}"
-    git checkout FETCH_HEAD
+    git reset --hard "${revision}"
     ./bin/flutter --version
     ./bin/flutter precache
   )
